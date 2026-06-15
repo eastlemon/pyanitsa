@@ -1,5 +1,9 @@
+import './style.css';
+import './leaderboard.css';
 import type { GameState, Card, BattleResult } from './engine';
 import { newGame, playTurn, getPlayerCardCount, getAiCardCount } from './engine';
+import { cardDataURL, cardBackDataURL } from './cards';
+import { loadScores, saveScore, type ScoreEntry } from './leaderboard';
 
 // === DOM ELEMENTS ===
 const playerCount = document.getElementById('player-count')!;
@@ -12,20 +16,126 @@ const playBtn = document.getElementById('play-btn') as HTMLButtonElement;
 const roundLabel = document.getElementById('round-label')!;
 const tableEl = document.getElementById('table')!;
 
+// === CACHE SVG ===
+const backURL = cardBackDataURL();
+const faceCache = new Map<string, string>();
+
+function getFaceURL(card: Card): string {
+  if (!faceCache.has(card.id)) {
+    faceCache.set(card.id, cardDataURL(card.rank, card.suit));
+  }
+  return faceCache.get(card.id)!;
+}
+
 // === GAME STATE ===
 let state: GameState = newGame();
 let animating = false;
+let scoreSaved = false;
+
+// === LEADERBOARD ===
+function getPlayerName(): string {
+  return localStorage.getItem('pyanitsa_player') || '';
+}
+
+function setPlayerName(name: string) {
+  localStorage.setItem('pyanitsa_player', name);
+}
+
+function injectScoreboard() {
+  const sbBtn = document.createElement('button');
+  sbBtn.className = 'sb-btn';
+  sbBtn.textContent = '🏆';
+  sbBtn.title = 'Топ игроков';
+  sbBtn.addEventListener('click', () => showScoreboardModal());
+  document.body.appendChild(sbBtn);
+}
+
+function showScoreboardModal() {
+  const existing = document.getElementById('sb-modal');
+  if (existing) existing.remove();
+
+  const scores = loadScores();
+  const rows = scores.length === 0
+    ? '<div class="sb-empty">Пока нет записей. Сыграй партию!</div>'
+    : scores.map((s, i) => `
+        <div class="sb-row ${s.result}">
+          <span class="sb-rank">${i + 1}</span>
+          <span class="sb-name">${escapeHtml(s.name)}</span>
+          <span class="sb-rounds">${s.rounds}</span>
+          <span class="sb-badge">${s.result === 'win' ? '🏆' : '💀'}</span>
+        </div>
+      `).join('');
+
+  const modal = document.createElement('div');
+  modal.className = 'scoreboard';
+  modal.id = 'sb-modal';
+  modal.innerHTML = `
+    <div class="sb-inner">
+      <div class="sb-header">
+        <h2>🏆 Топ игроков</h2>
+        <button class="sb-close" id="sb-close-btn">✕</button>
+      </div>
+      <div class="sb-list">${rows}</div>
+    </div>
+  `;
+  document.body.appendChild(modal);
+
+  document.getElementById('sb-close-btn')!.addEventListener('click', () => modal.remove());
+  modal.addEventListener('click', (e) => { if (e.target === modal) modal.remove(); });
+}
+
+function promptNameAndSave(rounds: number, isWin: boolean) {
+  const existing = document.getElementById('name-overlay');
+  if (existing) existing.remove();
+
+  const savedName = getPlayerName();
+
+  const overlay = document.createElement('div');
+  overlay.className = 'name-input-overlay';
+  overlay.id = 'name-overlay';
+  overlay.innerHTML = `
+    <div class="name-input-box">
+      <h3>${isWin ? '🎉 Победа!' : 'Игра окончена'}</h3>
+      <p>Раундов: ${rounds}. Записать результат?</p>
+      <input type="text" class="name-input" id="player-name-input" placeholder="Твоё имя" value="${escapeHtml(savedName)}" maxlength="20" />
+      <div class="name-input-actions">
+        <button class="btn-skip" id="skip-save-btn">Не сейчас</button>
+        <button class="btn-save" id="save-score-btn">Сохранить</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+
+  const input = document.getElementById('player-name-input') as HTMLInputElement;
+  input.focus();
+  input.select();
+
+  const save = () => {
+    const name = input.value.trim() || 'Аноним';
+    setPlayerName(name);
+    const entry: ScoreEntry = {
+      name,
+      rounds,
+      result: isWin ? 'win' : 'lose',
+      date: new Date().toISOString(),
+    };
+    saveScore(entry);
+    overlay.remove();
+    showScoreboardModal();
+  };
+
+  document.getElementById('save-score-btn')!.addEventListener('click', save);
+  document.getElementById('skip-save-btn')!.addEventListener('click', () => overlay.remove());
+  input.addEventListener('keydown', (e) => { if (e.key === 'Enter') save(); });
+}
+
+function escapeHtml(s: string): string {
+  const div = document.createElement('div');
+  div.textContent = s;
+  return div.innerHTML;
+}
 
 // === RENDER ===
-function suitColor(suit: string): 'red' | 'black' {
-  return suit === '♥' || suit === '♦' ? 'red' : 'black';
-}
-
-function rankDisplay(rank: string): string {
-  const map: Record<string, string> = { 'J': 'В', 'Q': 'Д', 'K': 'К', 'A': 'Т' };
-  return map[rank] || rank;
-}
-
 function createCardEl(card: Card, faceUp: boolean = false): HTMLElement {
   const el = document.createElement('div');
   el.className = `card ${faceUp ? 'flipped' : ''}`;
@@ -33,18 +143,8 @@ function createCardEl(card: Card, faceUp: boolean = false): HTMLElement {
 
   el.innerHTML = `
     <div class="card-inner">
-      <div class="card-back"></div>
-      <div class="card-face ${suitColor(card.suit)}">
-        <div class="card-corner top-left">
-          <span class="card-rank">${rankDisplay(card.rank)}</span>
-          <span class="card-suit">${card.suit}</span>
-        </div>
-        <div class="card-suit">${card.suit}</div>
-        <div class="card-corner bottom-right">
-          <span class="card-rank">${rankDisplay(card.rank)}</span>
-          <span class="card-suit">${card.suit}</span>
-        </div>
-      </div>
+      <div class="card-back" style="background-image:url('${backURL}');background-size:cover;"></div>
+      <div class="card-face" style="background-image:url('${getFaceURL(card)}');background-size:cover;"></div>
     </div>
   `;
 
@@ -56,11 +156,9 @@ function renderState() {
   aiCount.textContent = String(getAiCardCount(state));
   roundLabel.textContent = `Раунд ${state.round}`;
 
-  // Видимость колод
   playerDeck.style.display = getPlayerCardCount(state) > 0 ? 'block' : 'none';
   aiDeck.style.display = getAiCardCount(state) > 0 ? 'block' : 'none';
 
-  // Кнопка
   if (state.status === 'gameover') {
     showGameOver();
   } else {
@@ -79,7 +177,6 @@ async function animateBattle(result: BattleResult) {
   playBtn.disabled = true;
   clearTable();
 
-  // Выкладываем основные карты
   const pCard = createCardEl(result.playerCard);
   const aCard = createCardEl(result.aiCard);
 
@@ -91,13 +188,11 @@ async function animateBattle(result: BattleResult) {
 
   await sleep(600);
 
-  // Спор
   if (result.warRounds && result.warRounds.length > 0) {
     for (const war of result.warRounds) {
       showWarBanner();
       await sleep(700);
 
-      // Рубашкой
       const ph = createCardEl(war.playerHidden);
       const ah = createCardEl(war.aiHidden);
       ph.style.transform = 'translateY(-15px) rotate(5deg)';
@@ -107,7 +202,6 @@ async function animateBattle(result: BattleResult) {
 
       await sleep(400);
 
-      // Лицом
       const pf = createCardEl(war.playerFace, true);
       const af = createCardEl(war.aiFace, true);
       pf.classList.add('dealt-player');
@@ -122,7 +216,6 @@ async function animateBattle(result: BattleResult) {
     }
   }
 
-  // Показываем результат
   const resultText = document.createElement('div');
   resultText.className = 'battle-result';
 
@@ -138,7 +231,6 @@ async function animateBattle(result: BattleResult) {
 
   await sleep(1000);
 
-  // Убираем карты со стола
   const cards = tableEl.querySelectorAll('.card');
   cards.forEach((c, i) => {
     setTimeout(() => {
@@ -169,9 +261,11 @@ function showWarBanner() {
 }
 
 function showGameOver() {
+  if (scoreSaved) return; // не показываем дважды
+  scoreSaved = true;
+
   const isWin = state.winner === 'player';
 
-  // Прячем кнопку
   playBtn.style.display = 'none';
 
   const overlay = document.createElement('div');
@@ -181,7 +275,9 @@ function showGameOver() {
     <div class="overlay-content">
       <div class="overlay-title ${isWin ? 'win' : 'lose'}">${isWin ? 'ПОБЕДА!' : 'Поражение'}</div>
       <p style="opacity:0.7; font-size:1.1rem;">Раундов сыграно: ${state.round}</p>
-      <button class="btn-play" id="new-game-btn">Ещё раз!</button>
+      <div style="display:flex; gap:0.6rem;">
+        <button class="btn-play" id="new-game-btn">Ещё раз!</button>
+      </div>
     </div>
   `;
 
@@ -191,9 +287,15 @@ function showGameOver() {
     overlay.remove();
     playBtn.style.display = '';
     state = newGame();
+    scoreSaved = false;
     clearTable();
     renderState();
   });
+
+  // Сохраняем результат
+  setTimeout(() => {
+    promptNameAndSave(state.round, isWin);
+  }, 800);
 }
 
 function sleep(ms: number): Promise<void> {
@@ -212,4 +314,5 @@ playBtn.addEventListener('click', async () => {
 });
 
 // === INIT ===
+injectScoreboard();
 renderState();

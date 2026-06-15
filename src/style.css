@@ -108,7 +108,6 @@ body {
   width: var(--card-w);
   height: var(--card-h);
   border-radius: 8px;
-  background: var(--card-back);
   border: 2px solid var(--gold);
   box-shadow: var(--shadow);
 }
@@ -146,55 +145,13 @@ body {
 }
 
 .card-back {
-  background: var(--card-back);
-  border: 2px solid var(--gold);
-  box-shadow: var(--shadow);
+  border-radius: 8px;
 }
 
 .card-face {
-  background: var(--card-face);
   transform: rotateY(180deg);
-  border: 1px solid #ccc;
-  box-shadow: var(--shadow);
-  flex-direction: column;
-  font-weight: 700;
+  border-radius: 8px;
 }
-
-.card-rank {
-  font-size: 1.6rem;
-  line-height: 1;
-}
-
-.card-suit {
-  font-size: 2rem;
-  line-height: 1;
-}
-
-.card-corner {
-  position: absolute;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  font-size: 0.7rem;
-  line-height: 1;
-}
-
-.card-corner.top-left {
-  top: 6px;
-  left: 6px;
-}
-
-.card-corner.bottom-right {
-  bottom: 6px;
-  right: 6px;
-  transform: rotate(180deg);
-}
-
-.card-corner .card-rank { font-size: 0.85rem; }
-.card-corner .card-suit { font-size: 0.75rem; }
-
-.card-face.red { color: #d32f2f; }
-.card-face.black { color: #1a1a1a; }
 
 /* === СТОЛ === */
 .table {
