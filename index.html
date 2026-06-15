@@ -7,13 +7,33 @@
   <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🃏</text></svg>" />
 </head>
 <body>
-  <div class="header">
-    <h1>Пьяница</h1>
-    <p>Шестёрка бьёт туза</p>
+  <!-- Экран выбора режима -->
+  <div class="mode-screen" id="mode-screen">
+    <div class="mode-content">
+      <h1>🃏 Пьяница</h1>
+      <p class="mode-subtitle">Выбери режим</p>
+      <div class="mode-cards">
+        <button class="mode-card" id="mode-classic">
+          <span class="mode-icon">⚡</span>
+          <span class="mode-name">Классика</span>
+          <span class="mode-desc">Одна кнопка. Класть карты по очереди. Шестёрка бьёт туза.</span>
+        </button>
+        <button class="mode-card" id="mode-preview">
+          <span class="mode-icon">👁</span>
+          <span class="mode-name">Просмотр</span>
+          <span class="mode-desc">Подсмотри до 3 карт перед боем. Проиграл — отдаёшь все ставки.</span>
+        </button>
+      </div>
+    </div>
   </div>
 
-  <div class="game-board" id="board">
-    <!-- Счётчики -->
+  <!-- Игровое поле -->
+  <div class="game-board" id="board" style="display:none;">
+    <div class="header">
+      <h1>Пьяница</h1>
+      <p id="peek-info"></p>
+    </div>
+
     <div class="counters">
       <div class="counter player">
         <span class="counter-label">Ты</span>
@@ -25,7 +45,6 @@
       </div>
     </div>
 
-    <!-- Колонка ИИ -->
     <div class="deck-area">
       <div></div>
       <div class="deck" id="ai-deck">
@@ -37,14 +56,12 @@
       </div>
     </div>
 
-    <!-- Стол -->
     <div class="table" id="table">
       <div class="table-slot" id="table-player"></div>
       <div class="vs-label">VS</div>
       <div class="table-slot" id="table-ai"></div>
     </div>
 
-    <!-- Колода игрока -->
     <div class="deck-area">
       <div></div>
       <div class="deck" id="player-deck">
@@ -56,9 +73,9 @@
       </div>
     </div>
 
-    <!-- Кнопка -->
     <div class="action-area">
       <button class="btn-play" id="play-btn">Класть!</button>
+      <button class="btn-peek" id="peek-btn" style="display:none;">👁 Подсмотреть (3)</button>
       <span class="round-label" id="round-label">Раунд 0</span>
     </div>
   </div>
