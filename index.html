@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>Пьяница — карточная игра</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🃏</text></svg>" />
+</head>
+<body>
+  <div class="header">
+    <h1>Пьяница</h1>
+    <p>Шестёрка бьёт туза</p>
+  </div>
+
+  <div class="game-board" id="board">
+    <!-- Счётчики -->
+    <div class="counters">
+      <div class="counter player">
+        <span class="counter-label">Ты</span>
+        <span class="counter-value" id="player-count">18</span>
+      </div>
+      <div class="counter ai">
+        <span class="counter-label">Соперник</span>
+        <span class="counter-value" id="ai-count">18</span>
+      </div>
+    </div>
+
+    <!-- Колонка ИИ -->
+    <div class="deck-area">
+      <div></div>
+      <div class="deck" id="ai-deck">
+        <div class="deck-stack">
+          <div class="deck-stack-card" style="top:4px;left:4px;"></div>
+          <div class="deck-stack-card" style="top:2px;left:2px;"></div>
+          <div class="deck-stack-card"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Стол -->
+    <div class="table" id="table">
+      <div class="table-slot" id="table-player"></div>
+      <div class="vs-label">VS</div>
+      <div class="table-slot" id="table-ai"></div>
+    </div>
+
+    <!-- Колода игрока -->
+    <div class="deck-area">
+      <div></div>
+      <div class="deck" id="player-deck">
+        <div class="deck-stack">
+          <div class="deck-stack-card" style="top:4px;left:4px;"></div>
+          <div class="deck-stack-card" style="top:2px;left:2px;"></div>
+          <div class="deck-stack-card"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Кнопка -->
+    <div class="action-area">
+      <button class="btn-play" id="play-btn">Класть!</button>
+      <span class="round-label" id="round-label">Раунд 0</span>
+    </div>
+  </div>
+
+  <script type="module" src="/src/main.ts"></script>
+</body>
+</html>

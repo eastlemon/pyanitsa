@@ -1,0 +1,394 @@
+:root {
+  --felt-dark: #0a3d2e;
+  --felt: #0f5132;
+  --felt-light: #1a6b44;
+  --gold: #d4af37;
+  --card-back: linear-gradient(135deg, #8b0000 0%, #4a0000 50%, #8b0000 100%);
+  --card-face: #fafaf8;
+  --text-light: #f0f0f0;
+  --shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
+  --card-w: 90px;
+  --card-h: 130px;
+  --transition: 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+@media (min-width: 600px) {
+  :root {
+    --card-w: 110px;
+    --card-h: 160px;
+  }
+}
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  background: radial-gradient(ellipse at center, var(--felt-light) 0%, var(--felt) 50%, var(--felt-dark) 100%);
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+  color: var(--text-light);
+  user-select: none;
+  overflow-x: hidden;
+}
+
+/* === ИГРОВОЕ ПОЛЕ === */
+.game-board {
+  width: 100%;
+  max-width: 600px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1rem;
+  padding: 1rem;
+  flex-grow: 1;
+}
+
+/* === СЧЁТЧИКИ === */
+.counters {
+  display: flex;
+  justify-content: space-between;
+  width: 100%;
+  max-width: 400px;
+  padding: 0.5rem 1rem;
+}
+
+.counter {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.2rem;
+}
+
+.counter-label {
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  opacity: 0.7;
+}
+
+.counter-value {
+  font-size: 1.8rem;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+}
+
+.counter.player .counter-value { color: #4fc3f7; }
+.counter.ai .counter-value { color: #ff7043; }
+
+/* === КОЛОДА === */
+.deck-area {
+  display: flex;
+  justify-content: space-between;
+  width: 100%;
+  max-width: 400px;
+  height: var(--card-h);
+  position: relative;
+}
+
+.deck {
+  width: var(--card-w);
+  height: var(--card-h);
+  position: relative;
+}
+
+.deck-stack {
+  position: absolute;
+  width: 100%;
+  height: 100%;
+}
+
+.deck-stack-card {
+  position: absolute;
+  width: var(--card-w);
+  height: var(--card-h);
+  border-radius: 8px;
+  background: var(--card-back);
+  border: 2px solid var(--gold);
+  box-shadow: var(--shadow);
+}
+
+/* === КАРТА === */
+.card {
+  width: var(--card-w);
+  height: var(--card-h);
+  border-radius: 8px;
+  position: absolute;
+  transform-style: preserve-3d;
+  transition: var(--transition);
+}
+
+.card-inner {
+  width: 100%;
+  height: 100%;
+  position: relative;
+  transform-style: preserve-3d;
+}
+
+.card.flipped .card-inner {
+  transform: rotateY(180deg);
+}
+
+.card-face, .card-back {
+  position: absolute;
+  width: 100%;
+  height: 100%;
+  backface-visibility: hidden;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.card-back {
+  background: var(--card-back);
+  border: 2px solid var(--gold);
+  box-shadow: var(--shadow);
+}
+
+.card-face {
+  background: var(--card-face);
+  transform: rotateY(180deg);
+  border: 1px solid #ccc;
+  box-shadow: var(--shadow);
+  flex-direction: column;
+  font-weight: 700;
+}
+
+.card-rank {
+  font-size: 1.6rem;
+  line-height: 1;
+}
+
+.card-suit {
+  font-size: 2rem;
+  line-height: 1;
+}
+
+.card-corner {
+  position: absolute;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  font-size: 0.7rem;
+  line-height: 1;
+}
+
+.card-corner.top-left {
+  top: 6px;
+  left: 6px;
+}
+
+.card-corner.bottom-right {
+  bottom: 6px;
+  right: 6px;
+  transform: rotate(180deg);
+}
+
+.card-corner .card-rank { font-size: 0.85rem; }
+.card-corner .card-suit { font-size: 0.75rem; }
+
+.card-face.red { color: #d32f2f; }
+.card-face.black { color: #1a1a1a; }
+
+/* === СТОЛ === */
+.table {
+  display: flex;
+  gap: 2rem;
+  justify-content: center;
+  align-items: center;
+  min-height: var(--card-h);
+  width: 100%;
+  position: relative;
+}
+
+.table-slot {
+  width: var(--card-w);
+  height: var(--card-h);
+  position: relative;
+}
+
+.vs-label {
+  font-size: 1.2rem;
+  font-weight: 800;
+  color: var(--gold);
+  opacity: 0.5;
+}
+
+/* === КНОПКА === */
+.action-area {
+  padding: 1.5rem 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.btn-play {
+  background: linear-gradient(135deg, var(--gold) 0%, #b8860b 100%);
+  color: #1a1a1a;
+  border: none;
+  padding: 1rem 3rem;
+  font-size: 1.3rem;
+  font-weight: 800;
+  border-radius: 50px;
+  cursor: pointer;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  box-shadow: 0 6px 20px rgba(212, 175, 55, 0.4);
+  transition: all 0.2s ease;
+}
+
+.btn-play:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 25px rgba(212, 175, 55, 0.6);
+}
+
+.btn-play:active {
+  transform: translateY(0);
+}
+
+.btn-play:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.round-label {
+  font-size: 0.8rem;
+  opacity: 0.6;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+}
+
+/* === СПОР === */
+.war-banner {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  font-size: 3rem;
+  font-weight: 900;
+  color: var(--gold);
+  text-shadow: 0 0 30px rgba(212, 175, 55, 0.8), 0 2px 10px rgba(0,0,0,0.8);
+  animation: warPulse 0.8s ease-out forwards;
+  pointer-events: none;
+  z-index: 100;
+}
+
+@keyframes warPulse {
+  0% { transform: translate(-50%, -50%) scale(0.5); opacity: 0; }
+  30% { transform: translate(-50%, -50%) scale(1.2); opacity: 1; }
+  70% { transform: translate(-50%, -50%) scale(1); opacity: 1; }
+  100% { transform: translate(-50%, -50%) scale(1.5); opacity: 0; }
+}
+
+/* === ПОБЕДА === */
+.overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.85);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 200;
+  animation: fadeIn 0.4s ease;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.overlay-content {
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+  align-items: center;
+}
+
+.overlay-title {
+  font-size: 3rem;
+  font-weight: 900;
+}
+
+.overlay-title.win { color: #4fc3f7; }
+.overlay-title.lose { color: #ff7043; }
+
+/* === АНИМАЦИИ КАРТ === */
+@keyframes dealFromPlayer {
+  from {
+    transform: translate(-150px, -180px) rotateY(0deg) scale(0.8);
+    opacity: 0;
+  }
+  to {
+    transform: translate(0, 0) rotateY(180deg) scale(1);
+    opacity: 1;
+  }
+}
+
+@keyframes dealFromAi {
+  from {
+    transform: translate(150px, 180px) rotateY(0deg) scale(0.8);
+    opacity: 0;
+  }
+  to {
+    transform: translate(0, 0) rotateY(180deg) scale(1);
+    opacity: 1;
+  }
+}
+
+.card.dealt-player {
+  animation: dealFromPlayer 0.5s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+}
+
+.card.dealt-ai {
+  animation: dealFromAi 0.5s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+}
+
+/* === РЕЗУЛЬТАТ БОЯ === */
+.battle-result {
+  position: absolute;
+  top: -30px;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 1.5rem;
+  font-weight: 800;
+  white-space: nowrap;
+  animation: resultPop 1s ease 0.5s forwards;
+  opacity: 0;
+}
+
+@keyframes resultPop {
+  0% { opacity: 0; transform: translateX(-50%) translateY(10px); }
+  20% { opacity: 1; transform: translateX(-50%) translateY(0); }
+  80% { opacity: 1; }
+  100% { opacity: 0; transform: translateX(-50%) translateY(-10px); }
+}
+
+/* === ХЕДЕР === */
+.header {
+  width: 100%;
+  text-align: center;
+  padding: 1.5rem 1rem 0.5rem;
+}
+
+.header h1 {
+  font-size: 1.8rem;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  color: var(--gold);
+  text-shadow: 0 2px 10px rgba(0, 0, 0, 0.5);
+}
+
+.header p {
+  font-size: 0.8rem;
+  opacity: 0.6;
+  margin-top: 0.2rem;
+}
