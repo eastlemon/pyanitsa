@@ -295,7 +295,16 @@ async function animateBattle(result: BattleResult) {
   playBtn.disabled = true;
   peekBtn.disabled = true;
 
-  // AI peek animation (if any)
+  const playerStakeCount = result.playerPeeked ? result.playerPeeked.length - 1 : 0;
+  const aiStakeCount = result.aiPeeked ? result.aiPeeked.length - 1 : 0;
+
+  // 1. Карта игрока — первой
+  const pCard = createCardEl(result.playerCard);
+  pCard.classList.add('dealt-player');
+  tablePlayer.appendChild(pCard);
+  await sleep(600);
+
+  // 2. Бот подсматривает (если был peek)
   if (result.aiPeeked && result.aiPeeked.length > 0) {
     for (let i = 0; i < result.aiPeeked.length; i++) {
       const aiPeekCard = createCardEl(result.aiPeeked[i]);
@@ -308,31 +317,24 @@ async function animateBattle(result: BattleResult) {
       thinkText.style.color = '#ff7043';
       thinkText.textContent = '🤔 Бот смотрит...';
       tableEl.appendChild(thinkText);
-      await sleep(900);
+      await sleep(800);
       thinkText.remove();
 
       aiPeekCard.style.transition = 'all 0.3s ease';
       aiPeekCard.style.transform = 'scale(0.5)';
       aiPeekCard.style.opacity = '0';
-      await sleep(300);
+      await sleep(250);
     }
     tableAi.innerHTML = '';
   }
 
-  const playerStakeCount = result.playerPeeked ? result.playerPeeked.length - 1 : 0;
-  const aiStakeCount = result.aiPeeked ? result.aiPeeked.length - 1 : 0;
-
-  // Main cards — player first, then AI
-  const pCard = createCardEl(result.playerCard);
-  pCard.classList.add('dealt-player');
-  tablePlayer.appendChild(pCard);
-  await sleep(500);
-
+  // 3. Карта бота
   const aCard = createCardEl(result.aiCard);
   aCard.classList.add('dealt-ai');
   tableAi.appendChild(aCard);
-  await sleep(800);
+  await sleep(700);
 
+  // 4. Ставка (если доп. карты)
   if (playerStakeCount > 0 || aiStakeCount > 0) {
     const stakeText = document.createElement('div');
     stakeText.className = 'battle-result';
@@ -343,14 +345,13 @@ async function animateBattle(result: BattleResult) {
     stakeText.remove();
   }
 
-  // Если начался спор — карты остаются на столе, не убираем
+  // 5. Спор — карты остаются
   if (result.winner === 'war') {
-    // Спор — оставляем карты для визуала
     animating = false;
     return;
   }
 
-  // Результат
+  // 6. Результат
   const resultText = document.createElement('div');
   resultText.className = 'battle-result';
   if (result.winner === 'player') {
