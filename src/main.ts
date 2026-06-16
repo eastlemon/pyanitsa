@@ -222,17 +222,19 @@ async function animateBattle(result: BattleResult) {
   const resultText = document.createElement('div');
   resultText.className = 'battle-result';
   if (result.winner === 'player') {
-    resultText.textContent = '+';
+    resultText.textContent = result.pile.length > 2 ? `+${result.pile.length}` : '+';
     resultText.style.color = '#4fc3f7';
   } else {
-    resultText.textContent = '−';
+    resultText.textContent = result.pile.length > 2 ? `−${result.pile.length}` : '−';
     resultText.style.color = '#ff7043';
   }
   tableEl.appendChild(resultText);
-  await sleep(2000);
+  await sleep(1200);
 
-  // Карты остаются на столе — НЕ убираем
-  // Очищаются только при следующем ходе
+  // Карты уходят со стола
+  tableEl.querySelectorAll('.card').forEach((c) => c.classList.add('fading'));
+  await sleep(300);
+  clearTable();
 
   animating = false;
   renderState();
