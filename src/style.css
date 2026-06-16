@@ -3,7 +3,7 @@
   --felt: #0f5132;
   --felt-light: #1a6b44;
   --gold: #d4af37;
-  --card-back: linear-gradient(135deg, #8b0000 0%, #4a0000 50%, #8b0000 100%);
+  --card-back: url('/cards/back.png') center/cover;
   --card-face: #fafaf8;
   --text-light: #f0f0f0;
   --shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
@@ -202,6 +202,7 @@ body {
   border-radius: 8px;
   border: 2px solid var(--gold);
   box-shadow: var(--shadow);
+  background: url('/cards/back.png') center/cover;
 }
 
 /* === КАРТА === */
@@ -210,39 +211,15 @@ body {
   height: var(--card-h);
   border-radius: 8px;
   position: absolute;
-  transform-style: preserve-3d;
   transition: var(--transition);
 }
 
-.card-inner {
-  width: 100%;
-  height: 100%;
-  position: relative;
-  transform-style: preserve-3d;
-}
-
-.card.flipped .card-inner {
-  transform: rotateY(180deg);
-}
-
-.card-face, .card-back {
-  position: absolute;
-  width: 100%;
-  height: 100%;
-  backface-visibility: hidden;
-  border-radius: 8px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.card-back {
-  border-radius: 8px;
-}
-
 .card-face {
-  transform: rotateY(180deg);
+  width: 100%;
+  height: 100%;
   border-radius: 8px;
+  border: 1px solid #ccc;
+  box-shadow: var(--shadow);
 }
 
 /* === СТОЛ === */
@@ -373,22 +350,22 @@ body {
 /* === АНИМАЦИИ КАРТ === */
 @keyframes dealFromPlayer {
   from {
-    transform: translate(-150px, -180px) rotateY(0deg) scale(0.8);
+    transform: translate(-150px, -180px) scale(0.8);
     opacity: 0;
   }
   to {
-    transform: translate(0, 0) rotateY(180deg) scale(1);
+    transform: translate(0, 0) scale(1);
     opacity: 1;
   }
 }
 
 @keyframes dealFromAi {
   from {
-    transform: translate(150px, 180px) rotateY(0deg) scale(0.8);
+    transform: translate(150px, 180px) scale(0.8);
     opacity: 0;
   }
   to {
-    transform: translate(0, 0) rotateY(180deg) scale(1);
+    transform: translate(0, 0) scale(1);
     opacity: 1;
   }
 }

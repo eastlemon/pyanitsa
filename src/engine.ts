@@ -173,15 +173,19 @@ export function playTurn(state: GameState): GameState {
   const warRounds: WarRound[] = [];
 
   // === Добор колод ===
-  const refill = (deck: Card[], pile: Card[]): Card[] => {
-    if (deck.length === 0 && pile.length > 0) return shuffle(pile);
-    return deck;
+  // Возвращает [deck, pile] — если deck пуст, перемешивает pile в deck и очищает pile
+  const refill = (deck: Card[], pile: Card[]): [Card[], Card[]] => {
+    if (deck.length === 0 && pile.length > 0) return [shuffle(pile), []];
+    return [deck, pile];
   };
 
-  let playerDeck = refill(state.playerDeck, state.playerPile);
-  let aiDeck = refill(state.aiDeck, state.aiPile);
-  let playerPile = state.playerDeck.length === 0 ? [] : state.playerPile;
-  let aiPile = state.aiDeck.length === 0 ? [] : state.aiPile;
+  let playerDeck: Card[];
+  let playerPile: Card[];
+  [playerDeck, playerPile] = refill(state.playerDeck, state.playerPile);
+
+  let aiDeck: Card[];
+  let aiPile: Card[];
+  [aiDeck, aiPile] = refill(state.aiDeck, state.aiPile);
 
   // === ОПРЕДЕЛЯЕМ КАРТЫ ДЛЯ БОЯ ===
   let playerPeeked = [...state.playerPeeked];
@@ -228,8 +232,8 @@ export function playTurn(state: GameState): GameState {
 
   // === СПОР ===
   while (result === 0) {
-    playerDeck = refill(playerDeck, playerPile);
-    aiDeck = refill(aiDeck, aiPile);
+    [playerDeck, playerPile] = refill(playerDeck, playerPile);
+    [aiDeck, aiPile] = refill(aiDeck, aiPile);
     if (playerDeck.length < 2) { winner = 'ai'; break; }
     if (aiDeck.length < 2) { winner = 'player'; break; }
 
@@ -298,9 +302,9 @@ export function playTurn(state: GameState): GameState {
 }
 
 export function getPlayerCardCount(state: GameState): number {
-  return state.playerDeck.length + state.playerPile.length;
+  return state.playerDeck.length + state.playerPile.length + state.playerPeeked.length;
 }
 
 export function getAiCardCount(state: GameState): number {
-  return state.aiDeck.length + state.aiPile.length;
+  return state.aiDeck.length + state.aiPile.length + state.aiPeeked.length;
 }

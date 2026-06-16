@@ -2,7 +2,7 @@ import './style.css';
 import './leaderboard.css';
 import type { GameState, Card, BattleResult, GameMode } from './engine';
 import { newGame, playTurn, peekCard, getPlayerCardCount, getAiCardCount } from './engine';
-import { cardDataURL, cardBackDataURL } from './cards';
+import { cardImageURL } from './cards';
 import { loadScores, saveScore } from './leaderboard';
 
 // === DOM ===
@@ -20,11 +20,10 @@ const peekInfo = document.getElementById('peek-info')!;
 const board = document.getElementById('board')!;
 const modeScreen = document.getElementById('mode-screen')!;
 
-// === SVG CACHE ===
-const backURL = cardBackDataURL();
+// === IMAGE CACHE ===
 const faceCache = new Map<string, string>();
 function getFaceURL(card: Card): string {
-  if (!faceCache.has(card.id)) faceCache.set(card.id, cardDataURL(card.rank, card.suit));
+  if (!faceCache.has(card.id)) faceCache.set(card.id, cardImageURL(card.rank, card.suit));
   return faceCache.get(card.id)!;
 }
 
@@ -48,15 +47,12 @@ function startGame(mode: GameMode) {
 }
 
 // === CARD ELEMENT ===
-function createCardEl(card: Card, faceUp: boolean = false): HTMLElement {
+function createCardEl(card: Card): HTMLElement {
   const el = document.createElement('div');
-  el.className = `card ${faceUp ? 'flipped' : ''}`;
+  el.className = 'card';
   el.dataset.cardId = card.id;
   el.innerHTML = `
-    <div class="card-inner">
-      <div class="card-back" style="background-image:url('${backURL}');background-size:cover;"></div>
-      <div class="card-face" style="background-image:url('${getFaceURL(card)}');background-size:cover;"></div>
-    </div>`;
+    <div class="card-face" style="background-image:url('${getFaceURL(card)}');background-size:cover;"></div>`;
   return el;
 }
 
@@ -107,11 +103,34 @@ function clearTable() {
 }
 
 // === PEEK ===
-peekBtn.addEventListener('click', () => {
+peekBtn.addEventListener('click', async () => {
   if (animating) return;
   const newState = peekCard(state);
   if (!newState) return;
   state = newState;
+
+  // Анимация: показываем подсмотренную карту на столе игрока
+  animating = true;
+  peekBtn.disabled = true;
+  playBtn.disabled = true;
+
+  const lastCard = state.playerPeeked[state.playerPeeked.length - 1];
+  const cardEl = createCardEl(lastCard);
+  cardEl.classList.add('dealt-player');
+  // Не очищаем стол — добавляем рядом
+  tablePlayer.appendChild(cardEl);
+
+  await sleep(1500);
+
+  // Убираем карту обратно (уходим в колоду)
+  cardEl.style.transition = 'all 0.3s ease';
+  cardEl.style.transform = 'translate(0, -180px) scale(0.7) rotate(-10deg)';
+  cardEl.style.opacity = '0';
+
+  await sleep(300);
+  tablePlayer.innerHTML = '';
+
+  animating = false;
   renderState();
 });
 
@@ -122,7 +141,34 @@ async function animateBattle(result: BattleResult) {
   peekBtn.disabled = true;
   clearTable();
 
-  // Показываем подсмотренные карты сбоку (если были в режиме preview)
+  // === Анимация подсмотра ИИ (если был) ===
+  if (result.aiPeeked && result.aiPeeked.length > 0) {
+    for (let i = 0; i < result.aiPeeked.length; i++) {
+      const aiPeekCard = createCardEl(result.aiPeeked[i]);
+      aiPeekCard.classList.add('dealt-ai');
+      tableAi.innerHTML = '';
+      tableAi.appendChild(aiPeekCard);
+
+      // Показываем что бот думает
+      const thinkText = document.createElement('div');
+      thinkText.className = 'battle-result';
+      thinkText.style.color = '#ff7043';
+      thinkText.textContent = '🤔 Бот смотрит...';
+      tableEl.appendChild(thinkText);
+
+      await sleep(1000);
+      thinkText.remove();
+
+      // Убираем карту бота обратно
+      aiPeekCard.style.transition = 'all 0.3s ease';
+      aiPeekCard.style.transform = 'translate(0, 180px) scale(0.7) rotate(10deg)';
+      aiPeekCard.style.opacity = '0';
+      await sleep(400);
+    }
+    tableAi.innerHTML = '';
+  }
+
+  // Показываем подсмотренные карты игрока как ставку (если были)
   const playerStakeCount = result.playerPeeked ? result.playerPeeked.length - 1 : 0;
   const aiStakeCount = result.aiPeeked ? result.aiPeeked.length - 1 : 0;
 
@@ -133,7 +179,7 @@ async function animateBattle(result: BattleResult) {
   aCard.classList.add('dealt-ai');
   tablePlayer.appendChild(pCard);
   tableAi.appendChild(aCard);
-  await sleep(600);
+  await sleep(1200);
 
   // Показ ставки
   if (playerStakeCount > 0 || aiStakeCount > 0) {
@@ -150,7 +196,7 @@ async function animateBattle(result: BattleResult) {
   if (result.warRounds && result.warRounds.length > 0) {
     for (const war of result.warRounds) {
       showWarBanner();
-      await sleep(700);
+      await sleep(1000);
 
       const ph = createCardEl(war.playerHidden);
       const ah = createCardEl(war.aiHidden);
@@ -158,17 +204,17 @@ async function animateBattle(result: BattleResult) {
       ah.style.transform = 'translateY(15px) rotate(-5deg)';
       tablePlayer.appendChild(ph);
       tableAi.appendChild(ah);
-      await sleep(400);
+      await sleep(700);
 
-      const pf = createCardEl(war.playerFace, true);
-      const af = createCardEl(war.aiFace, true);
+      const pf = createCardEl(war.playerFace);
+      const af = createCardEl(war.aiFace);
       pf.classList.add('dealt-player');
       pf.style.transform = 'translateY(-30px) rotate(8deg)';
       af.classList.add('dealt-ai');
       af.style.transform = 'translateY(30px) rotate(-8deg)';
       tablePlayer.appendChild(pf);
       tableAi.appendChild(af);
-      await sleep(600);
+      await sleep(1200);
     }
   }
 
@@ -183,25 +229,10 @@ async function animateBattle(result: BattleResult) {
     resultText.style.color = '#ff7043';
   }
   tableEl.appendChild(resultText);
-  await sleep(1000);
+  await sleep(2000);
 
-  // Убираем карты
-  const cards = tableEl.querySelectorAll('.card');
-  cards.forEach((c, i) => {
-    setTimeout(() => {
-      const el = c as HTMLElement;
-      el.style.transition = 'all 0.4s ease';
-      const isPlayerWinner = result.winner === 'player';
-      el.style.transform = isPlayerWinner
-        ? 'translate(-200px, -200px) scale(0.5) rotate(-15deg)'
-        : 'translate(200px, 200px) scale(0.5) rotate(15deg)';
-      el.style.opacity = '0';
-    }, i * 50);
-  });
-
-  await sleep(600);
-  clearTable();
-  resultText.remove();
+  // Карты остаются на столе — НЕ убираем
+  // Очищаются только при следующем ходе
 
   animating = false;
   renderState();
@@ -351,6 +382,15 @@ function sleep(ms: number): Promise<void> { return new Promise(r => setTimeout(r
 // === EVENTS ===
 playBtn.addEventListener('click', async () => {
   if (animating) return;
+  // Плавно убираем старые карты
+  const oldCards = tableEl.querySelectorAll('.card, .battle-result');
+  oldCards.forEach((c) => {
+    const el = c as HTMLElement;
+    el.style.transition = 'opacity 0.2s ease';
+    el.style.opacity = '0';
+  });
+  await sleep(200);
+  clearTable();
   state = playTurn(state);
   if (state.lastResult) await animateBattle(state.lastResult);
 });
