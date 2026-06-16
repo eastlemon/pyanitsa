@@ -1,9 +1,9 @@
 import './style.css';
 import './leaderboard.css';
 import type { GameState, Card, BattleResult, GameMode } from './engine';
-import { newGame, playTurn, peekCard, getPlayerCardCount, getAiCardCount } from './engine';
+import { newGame, playTurn, peekCard, warStep, getPlayerCardCount, getAiCardCount, RANKS, SUITS } from './engine';
+import type { WarStepResult } from './engine';
 import { cardImageURL, cardBackURL } from './cards';
-import { RANKS, SUITS } from './engine';
 import { loadScores, saveScore } from './leaderboard';
 
 // === DOM ===
@@ -50,7 +50,6 @@ function preloadAllCards(): Promise<void> {
   })).then(() => undefined);
 }
 
-// Предзагрузка сразу при загрузке скрипта
 preloadAllCards();
 
 // === STATE ===
@@ -72,13 +71,19 @@ function startGame(mode: GameMode) {
   renderState();
 }
 
-// === CARD ELEMENT ===
+// === CARD ELEMENTS ===
 function createCardEl(card: Card): HTMLElement {
   const el = document.createElement('div');
   el.className = 'card';
   el.dataset.cardId = card.id;
-  el.innerHTML = `
-    <div class="card-face" style="background-image:url('${getFaceURL(card)}'), url('${cardBackURL()}');background-size:cover;"></div>`;
+  el.innerHTML = `<div class="card-face" style="background-image:url('${getFaceURL(card)}'), url('${cardBackURL()}');background-size:cover;"></div>`;
+  return el;
+}
+
+function createBackEl(): HTMLElement {
+  const el = document.createElement('div');
+  el.className = 'card';
+  el.innerHTML = `<div class="card-face" style="background-image:url('${cardBackURL()}');background-size:cover;"></div>`;
   return el;
 }
 
@@ -93,16 +98,28 @@ function renderState() {
 
   if (state.status === 'gameover') {
     showGameOver();
+    return;
+  }
+
+  playBtn.disabled = animating;
+
+  // Кнопка меняется в зависимости от статуса
+  if (state.status === 'war-hidden') {
+    playBtn.textContent = '🔒 Положить закрытую';
+  } else if (state.status === 'war-face') {
+    playBtn.textContent = '⚔️ Открыть!';
+  } else if (state.mode === 'preview') {
+    playBtn.textContent = 'Играть!';
   } else {
-    playBtn.disabled = animating;
-    playBtn.textContent = state.mode === 'preview' ? 'Играть!' : 'Класть!';
+    playBtn.textContent = 'Класть!';
   }
 
   updatePeekUI();
 }
 
 function updatePeekUI() {
-  if (state.mode !== 'preview') {
+  // Подсмотр только в режиме preview и только в статусе peeking
+  if (state.mode !== 'preview' || state.status !== 'peeking') {
     peekBtn.style.display = 'none';
     peekInfo.style.display = 'none';
     return;
@@ -112,7 +129,7 @@ function updatePeekUI() {
   peekInfo.style.display = '';
 
   const remaining = state.maxPeeks - state.playerPeekCount;
-  peekBtn.disabled = animating || remaining <= 0 || state.status === 'gameover';
+  peekBtn.disabled = animating || remaining <= 0;
   peekBtn.textContent = `👁 Подсмотреть (${remaining})`;
 
   if (state.playerPeeked.length > 0) {
@@ -135,7 +152,6 @@ peekBtn.addEventListener('click', async () => {
   if (!newState) return;
   state = newState;
 
-  // Анимация: показываем подсмотренную карту на столе игрока
   animating = true;
   peekBtn.disabled = true;
   playBtn.disabled = true;
@@ -143,16 +159,13 @@ peekBtn.addEventListener('click', async () => {
   const lastCard = state.playerPeeked[state.playerPeeked.length - 1];
   const cardEl = createCardEl(lastCard);
   cardEl.classList.add('dealt-player');
-  // Не очищаем стол — добавляем рядом
   tablePlayer.appendChild(cardEl);
 
   await sleep(1500);
 
-  // Убираем карту обратно (уходим в колоду)
   cardEl.style.transition = 'all 0.3s ease';
-  cardEl.style.transform = 'translate(0, -180px) scale(0.7) rotate(-10deg)';
+  cardEl.style.transform = 'translate(0, -120px) scale(0.7) rotate(-10deg)';
   cardEl.style.opacity = '0';
-
   await sleep(300);
   tablePlayer.innerHTML = '';
 
@@ -160,14 +173,127 @@ peekBtn.addEventListener('click', async () => {
   renderState();
 });
 
-// === BATTLE ANIMATION ===
+// === PLAY / WAR BUTTON ===
+playBtn.addEventListener('click', async () => {
+  if (animating) return;
+
+  // === WAR MODE ===
+  if (state.status === 'war-hidden' || state.status === 'war-face') {
+    await doWarStep();
+    return;
+  }
+
+  // === NORMAL PLAY ===
+  // Убираем старые карты
+  const oldCards = tableEl.querySelectorAll('.card, .battle-result');
+  oldCards.forEach((c) => {
+    const el = c as HTMLElement;
+    el.style.transition = 'opacity 0.2s ease';
+    el.style.opacity = '0';
+  });
+  await sleep(200);
+  clearTable();
+
+  state = playTurn(state);
+
+  if (state.lastResult) {
+    await animateBattle(state.lastResult);
+  }
+
+  // Если после боя начался спор — не очищаем карты, они остаются
+  if (state.status === 'war-hidden') {
+    showWarBanner();
+    await sleep(800);
+  }
+
+  renderState();
+});
+
+// === WAR STEP ANIMATION ===
+async function doWarStep() {
+  animating = true;
+  playBtn.disabled = true;
+
+  if (state.status === 'war-hidden') {
+    // Игрок кладёт закрытую карту (рубашкой)
+    const pBack = createBackEl();
+    pBack.classList.add('dealt-player');
+    tablePlayer.appendChild(pBack);
+
+    const aBack = createBackEl();
+    aBack.classList.add('dealt-ai');
+    tableAi.appendChild(aBack);
+
+    state = warStep(state).state; // переходим в war-face
+
+    await sleep(500);
+    animating = false;
+    renderState();
+    return;
+  }
+
+  // war-face: кладём рубашки, потом переворачиваем
+  const pBack = createBackEl();
+  pBack.classList.add('dealt-player');
+  tablePlayer.appendChild(pBack);
+
+  const aBack = createBackEl();
+  aBack.classList.add('dealt-ai');
+  tableAi.appendChild(aBack);
+
+  await sleep(500);
+
+  const wr: WarStepResult = warStep(state);
+  state = wr.state;
+
+  // Переворот — меняем рубашки на открытые карты
+  pBack.style.transition = 'transform 0.15s ease';
+  aBack.style.transition = 'transform 0.15s ease';
+  pBack.style.transform = 'scaleX(0)';
+  aBack.style.transform = 'scaleX(0)';
+  await sleep(150);
+
+  if (wr.revealedCards) {
+    pBack.innerHTML = `<div class="card-face" style="background-image:url('${getFaceURL(wr.revealedCards.player)}'), url('${cardBackURL()}');background-size:cover;"></div>`;
+    aBack.innerHTML = `<div class="card-face" style="background-image:url('${getFaceURL(wr.revealedCards.ai)}'), url('${cardBackURL()}');background-size:cover;"></div>`;
+    pBack.style.transform = 'scaleX(1)';
+    aBack.style.transform = 'scaleX(1)';
+  }
+
+  await sleep(800);
+
+  if (wr.outcome === 'war-continues') {
+    showWarBanner();
+    await sleep(800);
+    animating = false;
+    renderState();
+    return;
+  }
+
+  if (wr.outcome === 'war-won' || wr.outcome === 'gameover') {
+    const resultText = document.createElement('div');
+    resultText.className = 'battle-result';
+    resultText.textContent = wr.winner === 'player' ? '+' : '−';
+    resultText.style.color = wr.winner === 'player' ? '#4fc3f7' : '#ff7043';
+    tableEl.appendChild(resultText);
+    await sleep(1000);
+
+    tableEl.querySelectorAll('.card').forEach((c) => c.classList.add('fading'));
+    await sleep(300);
+    clearTable();
+  }
+
+  animating = false;
+  renderState();
+}
+
+// === BATTLE ANIMATION (normal, non-war) ===
 async function animateBattle(result: BattleResult) {
   animating = true;
   playBtn.disabled = true;
   peekBtn.disabled = true;
-  clearTable();
 
-  // === Анимация подсмотра ИИ (если был) ===
+  // AI peek animation (if any)
   if (result.aiPeeked && result.aiPeeked.length > 0) {
     for (let i = 0; i < result.aiPeeked.length; i++) {
       const aiPeekCard = createCardEl(result.aiPeeked[i]);
@@ -175,73 +301,49 @@ async function animateBattle(result: BattleResult) {
       tableAi.innerHTML = '';
       tableAi.appendChild(aiPeekCard);
 
-      // Показываем что бот думает
       const thinkText = document.createElement('div');
       thinkText.className = 'battle-result';
       thinkText.style.color = '#ff7043';
       thinkText.textContent = '🤔 Бот смотрит...';
       tableEl.appendChild(thinkText);
-
-      await sleep(1000);
+      await sleep(900);
       thinkText.remove();
 
-      // Убираем карту бота обратно
       aiPeekCard.style.transition = 'all 0.3s ease';
-      aiPeekCard.style.transform = 'translate(0, 180px) scale(0.7) rotate(10deg)';
+      aiPeekCard.style.transform = 'translate(0, 120px) scale(0.7) rotate(10deg)';
       aiPeekCard.style.opacity = '0';
-      await sleep(400);
+      await sleep(300);
     }
     tableAi.innerHTML = '';
   }
 
-  // Показываем подсмотренные карты игрока как ставку (если были)
   const playerStakeCount = result.playerPeeked ? result.playerPeeked.length - 1 : 0;
   const aiStakeCount = result.aiPeeked ? result.aiPeeked.length - 1 : 0;
 
-  // Основные карты
+  // Main cards
   const pCard = createCardEl(result.playerCard);
   const aCard = createCardEl(result.aiCard);
   pCard.classList.add('dealt-player');
   aCard.classList.add('dealt-ai');
   tablePlayer.appendChild(pCard);
   tableAi.appendChild(aCard);
-  await sleep(1200);
+  await sleep(1000);
 
-  // Показ ставки
   if (playerStakeCount > 0 || aiStakeCount > 0) {
     const stakeText = document.createElement('div');
     stakeText.className = 'battle-result';
     stakeText.style.color = '#d4af37';
     stakeText.textContent = `Ставка: ${playerStakeCount + aiStakeCount} карт`;
     tableEl.appendChild(stakeText);
-    await sleep(800);
+    await sleep(700);
     stakeText.remove();
   }
 
-  // Спор
-  if (result.warRounds && result.warRounds.length > 0) {
-    for (const war of result.warRounds) {
-      showWarBanner();
-      await sleep(1000);
-
-      const ph = createCardEl(war.playerHidden);
-      const ah = createCardEl(war.aiHidden);
-      ph.style.transform = 'translateY(-15px) rotate(5deg)';
-      ah.style.transform = 'translateY(15px) rotate(-5deg)';
-      tablePlayer.appendChild(ph);
-      tableAi.appendChild(ah);
-      await sleep(700);
-
-      const pf = createCardEl(war.playerFace);
-      const af = createCardEl(war.aiFace);
-      pf.classList.add('dealt-player');
-      pf.style.transform = 'translateY(-30px) rotate(8deg)';
-      af.classList.add('dealt-ai');
-      af.style.transform = 'translateY(30px) rotate(-8deg)';
-      tablePlayer.appendChild(pf);
-      tableAi.appendChild(af);
-      await sleep(1200);
-    }
+  // Если начался спор — карты остаются на столе, не убираем
+  if (result.winner === 'war') {
+    // Спор — оставляем карты для визуала
+    animating = false;
+    return;
   }
 
   // Результат
@@ -255,9 +357,8 @@ async function animateBattle(result: BattleResult) {
     resultText.style.color = '#ff7043';
   }
   tableEl.appendChild(resultText);
-  await sleep(1200);
+  await sleep(1000);
 
-  // Карты уходят со стола
   tableEl.querySelectorAll('.card').forEach((c) => c.classList.add('fading'));
   await sleep(300);
   clearTable();
@@ -406,22 +507,6 @@ function escapeHtml(s: string): string {
 }
 
 function sleep(ms: number): Promise<void> { return new Promise(r => setTimeout(r, ms)); }
-
-// === EVENTS ===
-playBtn.addEventListener('click', async () => {
-  if (animating) return;
-  // Плавно убираем старые карты
-  const oldCards = tableEl.querySelectorAll('.card, .battle-result');
-  oldCards.forEach((c) => {
-    const el = c as HTMLElement;
-    el.style.transition = 'opacity 0.2s ease';
-    el.style.opacity = '0';
-  });
-  await sleep(200);
-  clearTable();
-  state = playTurn(state);
-  if (state.lastResult) await animateBattle(state.lastResult);
-});
 
 // === INIT ===
 injectScoreboard();

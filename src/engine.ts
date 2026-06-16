@@ -50,22 +50,22 @@ export function compareCards(a: Card, b: Card): number {
   return 0;
 }
 
+// === War step: what kind of card to draw next in a war ===
+export type WarPhase = 'hidden' | 'face';
+
+export interface WarStep {
+  phase: WarPhase;
+  playerCard: Card;
+  aiCard: Card;
+}
+
 export interface BattleResult {
   playerCard: Card;
   aiCard: Card;
   winner: 'player' | 'ai' | 'war';
   pile: Card[];
-  warRounds?: WarRound[];
-  playerPeeked?: Card[];  // карты подсмотренные игроком (для режима preview)
+  playerPeeked?: Card[];
   aiPeeked?: Card[];
-}
-
-export interface WarRound {
-  playerHidden: Card;
-  aiHidden: Card;
-  playerFace: Card;
-  aiFace: Card;
-  winner: 'player' | 'ai' | 'war';
 }
 
 export interface GameState {
@@ -74,14 +74,16 @@ export interface GameState {
   aiDeck: Card[];
   playerPile: Card[];
   aiPile: Card[];
+  /** Карты на столе (в текущем бою/споре) */
   tablePile: Card[];
-  status: 'idle' | 'battling' | 'war' | 'gameover' | 'peeking';
+  status: 'idle' | 'peeking' | 'war-hidden' | 'war-face' | 'gameover';
+  warPhase: WarPhase | null;
   winner: 'player' | 'ai' | null;
   round: number;
   lastResult: BattleResult | null;
   history: BattleResult[];
   // Preview mode
-  playerPeeked: Card[];   // карты которые игрок просмотрел и отложил
+  playerPeeked: Card[];
   playerPeekCount: number;
   aiPeeked: Card[];
   aiPeekCount: number;
@@ -99,6 +101,7 @@ export function newGame(mode: GameMode = 'classic'): GameState {
     aiPile: [],
     tablePile: [],
     status: mode === 'preview' ? 'peeking' : 'idle',
+    warPhase: null,
     winner: null,
     round: 0,
     lastResult: null,
@@ -111,100 +114,81 @@ export function newGame(mode: GameMode = 'classic'): GameState {
   };
 }
 
-// === PREVIEW MODE: peek ====
+// === Refill helper ===
+function refill(deck: Card[], pile: Card[]): [Card[], Card[]] {
+  if (deck.length === 0 && pile.length > 0) return [shuffle(pile), []];
+  return [deck, pile];
+}
 
-/**
- * Игрок просматривает верхнюю карту (берёт из колоды в peeked)
- * Возвращает обновлённое состояние или null если нельзя
- */
+// === Draw one card from player or AI (with refill) ===
+function drawCard(deck: Card[], pile: Card[]): { card: Card | null; deck: Card[]; pile: Card[] } {
+  [deck, pile] = refill(deck, pile);
+  if (deck.length === 0) return { card: null, deck, pile };
+  return { card: deck[0], deck: deck.slice(1), pile };
+}
+
+// === PREVIEW MODE: peek ===
 export function peekCard(state: GameState): GameState | null {
   if (state.mode !== 'preview' || state.status !== 'peeking') return null;
   if (state.playerPeekCount >= state.maxPeeks) return null;
 
-  // Добор из pile если колода пуста
-  if (state.playerDeck.length === 0 && state.playerPile.length > 0) {
-    state = { ...state, playerDeck: shuffle(state.playerPile), playerPile: [] };
-  }
-  if (state.playerDeck.length === 0) return null;
+  let playerDeck = [...state.playerDeck];
+  let playerPile = [...state.playerPile];
+  [playerDeck, playerPile] = refill(playerDeck, playerPile);
+  if (playerDeck.length === 0) return null;
 
-  const card = state.playerDeck[0];
+  const card = playerDeck[0];
   return {
     ...state,
-    playerDeck: state.playerDeck.slice(1),
+    playerDeck: playerDeck.slice(1),
+    playerPile,
     playerPeeked: [...state.playerPeeked, card],
     playerPeekCount: state.playerPeekCount + 1,
   };
 }
 
-/**
- * Сбросить подсмотренные карты и начать заново (например игрок передумал)
- * Только если ещё не дошёл до лимита — нет, нельзя. Правило: подсмотрел = отложил.
- */
-
 // === AI PEEK LOGIC ===
 export function aiPeekDecision(state: GameState): { peeked: Card[]; deck: Card[] } {
   let deck = [...state.aiDeck];
-  const pile = [...state.aiPile];
+  let pile = [...state.aiPile];
   const peeked: Card[] = [];
 
   for (let i = 0; i < state.maxPeeks; i++) {
-    if (deck.length === 0 && pile.length > 0) {
-      deck = shuffle(pile);
-    }
+    [deck, pile] = refill(deck, pile);
     if (deck.length === 0) break;
-
-    const card = deck[0];
-    peeked.push(card);
+    peeked.push(deck[0]);
     deck = deck.slice(1);
-
-    // AI стратегия: продолжает если карта слабая (< 10)
-    // С вероятностью 30% может рискнуть с слабой картой
-    if (card.power >= 10 || Math.random() < 0.3) break;
+    if (peeked[peeked.length - 1].power >= 10 || Math.random() < 0.3) break;
   }
-
+  // Вернём pile обратно (AI не трогает pile при peek, только deck)
   return { peeked, deck };
 }
 
-// === PLAY TURN ===
+// === PLAY TURN (initial play, no auto-war) ===
 export function playTurn(state: GameState): GameState {
   if (state.status === 'gameover') return state;
 
-  const pile: Card[] = [];
-  const warRounds: WarRound[] = [];
+  let playerDeck = [...state.playerDeck];
+  let playerPile = [...state.playerPile];
+  let aiDeck = [...state.aiDeck];
+  let aiPile = [...state.aiPile];
 
-  // === Добор колод ===
-  // Возвращает [deck, pile] — если deck пуст, перемешивает pile в deck и очищает pile
-  const refill = (deck: Card[], pile: Card[]): [Card[], Card[]] => {
-    if (deck.length === 0 && pile.length > 0) return [shuffle(pile), []];
-    return [deck, pile];
-  };
-
-  let playerDeck: Card[];
-  let playerPile: Card[];
-  [playerDeck, playerPile] = refill(state.playerDeck, state.playerPile);
-
-  let aiDeck: Card[];
-  let aiPile: Card[];
-  [aiDeck, aiPile] = refill(state.aiDeck, state.aiPile);
-
-  // === ОПРЕДЕЛЯЕМ КАРТЫ ДЛЯ БОЯ ===
   let playerPeeked = [...state.playerPeeked];
   let aiPeeked: Card[] = [];
+  const tablePile: Card[] = [];
 
-  // Карта игрока
+  // === Player card ===
   let playerCard: Card;
   if (state.mode === 'preview' && playerPeeked.length > 0) {
-    // Берём последнюю подсмотренную
     playerCard = playerPeeked[playerPeeked.length - 1];
-    // Остальные подсмотренные идут в кон (ставка)
-    pile.push(...playerPeeked.slice(0, -1));
+    tablePile.push(...playerPeeked.slice(0, -1));
   } else {
-    if (playerDeck.length === 0) return { ...state, status: 'gameover', winner: 'ai' };
-    playerCard = playerDeck[0];
-    playerDeck = playerDeck.slice(1);
+    const r = drawCard(playerDeck, playerPile);
+    if (!r.card) return { ...state, status: 'gameover', winner: 'ai' };
+    playerCard = r.card; playerDeck = r.deck; playerPile = r.pile;
   }
 
-  // Карта ИИ
+  // === AI card ===
   let aiCard: Card;
   if (state.mode === 'preview') {
     const aiResult = aiPeekDecision({ ...state, aiDeck, aiPile });
@@ -212,70 +196,63 @@ export function playTurn(state: GameState): GameState {
     aiDeck = aiResult.deck;
     if (aiPeeked.length > 0) {
       aiCard = aiPeeked[aiPeeked.length - 1];
-      pile.push(...aiPeeked.slice(0, -1));
+      tablePile.push(...aiPeeked.slice(0, -1));
     } else {
-      if (aiDeck.length === 0) return { ...state, status: 'gameover', winner: 'player' };
-      aiCard = aiDeck[0];
-      aiDeck = aiDeck.slice(1);
+      const r = drawCard(aiDeck, aiPile);
+      if (!r.card) return { ...state, status: 'gameover', winner: 'player' };
+      aiCard = r.card; aiDeck = r.deck; aiPile = r.pile;
     }
   } else {
-    if (aiDeck.length === 0) return { ...state, status: 'gameover', winner: 'player' };
-    aiCard = aiDeck[0];
-    aiDeck = aiDeck.slice(1);
+    const r = drawCard(aiDeck, aiPile);
+    if (!r.card) return { ...state, status: 'gameover', winner: 'player' };
+    aiCard = r.card; aiDeck = r.deck; aiPile = r.pile;
   }
 
-  pile.push(playerCard, aiCard);
+  tablePile.push(playerCard, aiCard);
 
-  // === СРАВНЕНИЕ ===
-  let result = compareCards(playerCard, aiCard);
-  let winner: 'player' | 'ai' | 'war' = result > 0 ? 'player' : result < 0 ? 'ai' : 'war';
+  const result = compareCards(playerCard, aiCard);
 
-  // === СПОР ===
-  while (result === 0) {
-    [playerDeck, playerPile] = refill(playerDeck, playerPile);
-    [aiDeck, aiPile] = refill(aiDeck, aiPile);
-    if (playerDeck.length < 2) { winner = 'ai'; break; }
-    if (aiDeck.length < 2) { winner = 'player'; break; }
-
-    const ph = playerDeck[0]; playerDeck = playerDeck.slice(1);
-    const ah = aiDeck[0]; aiDeck = aiDeck.slice(1);
-    const pf = playerDeck[0]; playerDeck = playerDeck.slice(1);
-    const af = aiDeck[0]; aiDeck = aiDeck.slice(1);
-    pile.push(ph, ah, pf, af);
-
-    result = compareCards(pf, af);
-    const warWinner = result > 0 ? 'player' : result < 0 ? 'ai' : 'war';
-    warRounds.push({ playerHidden: ph, aiHidden: ah, playerFace: pf, aiFace: af, winner: warWinner });
-    winner = warWinner;
+  if (result === 0) {
+    // === WAR — не решаем автоматически ===
+    return {
+      ...state,
+      playerDeck, aiDeck, playerPile, aiPile,
+      tablePile,
+      status: 'war-hidden',
+      warPhase: 'hidden',
+      round: state.round + 1,
+      playerPeeked: [],
+      playerPeekCount: 0,
+      aiPeeked: [],
+      aiPeekCount: 0,
+      lastResult: {
+        playerCard, aiCard, winner: 'war', pile: [...tablePile],
+        playerPeeked: state.mode === 'preview' ? [...playerPeeked] : undefined,
+        aiPeeked: state.mode === 'preview' ? [...aiPeeked] : undefined,
+      },
+    };
   }
 
-  // === РАСПРЕДЕЛЕНИЕ КАРТ ===
+  // === Обычный результат ===
+  const winner = result > 0 ? 'player' : 'ai';
+  if (winner === 'player') {
+    playerPile = [...playerPile, ...tablePile];
+  } else {
+    aiPile = [...aiPile, ...tablePile];
+  }
+
   const battleResult: BattleResult = {
-    playerCard,
-    aiCard,
-    winner: winner as 'player' | 'ai',
-    pile: [...pile],
-    warRounds: warRounds.length > 0 ? warRounds : undefined,
+    playerCard, aiCard, winner, pile: [...tablePile],
     playerPeeked: state.mode === 'preview' ? [...playerPeeked] : undefined,
     aiPeeked: state.mode === 'preview' ? [...aiPeeked] : undefined,
   };
 
-  // Победитель забирает весь кон
-  if (winner === 'player') {
-    playerPile = [...playerPile, ...pile];
-  } else {
-    aiPile = [...aiPile, ...pile];
-  }
-
   const newState: GameState = {
     ...state,
-    mode: state.mode,
-    playerDeck,
-    aiDeck,
-    playerPile,
-    aiPile,
+    playerDeck, aiDeck, playerPile, aiPile,
     tablePile: [],
     status: state.mode === 'preview' ? 'peeking' : 'idle',
+    warPhase: null,
     round: state.round + 1,
     lastResult: battleResult,
     history: [...state.history, battleResult],
@@ -283,22 +260,111 @@ export function playTurn(state: GameState): GameState {
     playerPeekCount: 0,
     aiPeeked: [],
     aiPeekCount: 0,
-    maxPeeks: state.maxPeeks,
   };
 
-  // === Проверка конца игры ===
-  const playerTotal = newState.playerDeck.length + newState.playerPile.length;
-  const aiTotal = newState.aiDeck.length + newState.aiPile.length;
+  checkGameOver(newState);
+  return newState;
+}
 
-  if (playerTotal === 0) {
-    newState.status = 'gameover';
-    newState.winner = 'ai';
-  } else if (aiTotal === 0) {
-    newState.status = 'gameover';
-    newState.winner = 'player';
+export interface WarStepResult {
+  state: GameState;
+  /** Карты, открытые в этом шаге (для анимации) */
+  revealedCards: { player: Card; ai: Card } | null;
+  /** Чем завершился шаг */
+  outcome: 'hidden-placed' | 'face-revealed' | 'war-won' | 'war-continues' | 'gameover';
+  winner: 'player' | 'ai' | null;
+}
+
+// === WAR STEP — игрок жмёт кнопку, открываем по одной паре ===
+export function warStep(state: GameState): WarStepResult {
+  if (state.status !== 'war-hidden' && state.status !== 'war-face') {
+    return { state, revealedCards: null, outcome: 'gameover', winner: null };
   }
 
-  return newState;
+  let playerDeck = [...state.playerDeck];
+  let playerPile = [...state.playerPile];
+  let aiDeck = [...state.aiDeck];
+  let aiPile = [...state.aiPile];
+  let tablePile = [...state.tablePile];
+
+  if (state.status === 'war-hidden') {
+    // Drawing 1 hidden card each (rubashka)
+    const pr = drawCard(playerDeck, playerPile);
+    const ar = drawCard(aiDeck, aiPile);
+    if (!pr.card) {
+      const ns = { ...state, status: 'gameover' as const, winner: 'ai' as const, tablePile: [] };
+      aiPile = [...aiPile, ...tablePile];
+      return { state: { ...ns, aiPile }, revealedCards: null, outcome: 'gameover', winner: 'ai' };
+    }
+    if (!ar.card) {
+      const ns = { ...state, status: 'gameover' as const, winner: 'player' as const, tablePile: [] };
+      playerPile = [...playerPile, ...tablePile];
+      return { state: { ...ns, playerPile }, revealedCards: null, outcome: 'gameover', winner: 'player' };
+    }
+    playerDeck = pr.deck; playerPile = pr.pile;
+    aiDeck = ar.deck; aiPile = ar.pile;
+    tablePile.push(pr.card, ar.card);
+    const newState: GameState = {
+      ...state, playerDeck, aiDeck, playerPile, aiPile, tablePile,
+      status: 'war-face', warPhase: 'face',
+    };
+    return { state: newState, revealedCards: null, outcome: 'hidden-placed', winner: null };
+  }
+
+  // war-face: drawing the face-up comparison cards
+  const pr = drawCard(playerDeck, playerPile);
+  const ar = drawCard(aiDeck, aiPile);
+  if (!pr.card) {
+    aiPile = [...aiPile, ...tablePile];
+    const ns: GameState = { ...state, status: 'gameover', winner: 'ai', tablePile: [], aiPile };
+    return { state: ns, revealedCards: null, outcome: 'gameover', winner: 'ai' };
+  }
+  if (!ar.card) {
+    playerPile = [...playerPile, ...tablePile];
+    const ns: GameState = { ...state, status: 'gameover', winner: 'player', tablePile: [], playerPile };
+    return { state: ns, revealedCards: null, outcome: 'gameover', winner: 'player' };
+  }
+
+  playerDeck = pr.deck; playerPile = pr.pile;
+  aiDeck = ar.deck; aiPile = ar.pile;
+  tablePile.push(pr.card, ar.card);
+  const revealed = { player: pr.card, ai: ar.card };
+
+  const result = compareCards(pr.card, ar.card);
+  if (result === 0) {
+    // Another war!
+    const newState: GameState = {
+      ...state, playerDeck, aiDeck, playerPile, aiPile, tablePile,
+      status: 'war-hidden', warPhase: 'hidden',
+    };
+    return { state: newState, revealedCards: revealed, outcome: 'war-continues', winner: null };
+  }
+
+  const winner = result > 0 ? 'player' : 'ai';
+  if (winner === 'player') {
+    playerPile = [...playerPile, ...tablePile];
+  } else {
+    aiPile = [...aiPile, ...tablePile];
+  }
+
+  const newState: GameState = {
+    ...state,
+    playerDeck, aiDeck, playerPile, aiPile,
+    tablePile: [],
+    status: state.mode === 'preview' ? 'peeking' : 'idle',
+    warPhase: null,
+  };
+
+  checkGameOver(newState);
+  const outcome = newState.status === 'gameover' ? 'gameover' : 'war-won';
+  return { state: newState, revealedCards: revealed, outcome, winner };
+}
+
+function checkGameOver(state: GameState) {
+  const playerTotal = state.playerDeck.length + state.playerPile.length;
+  const aiTotal = state.aiDeck.length + state.aiPile.length;
+  if (playerTotal === 0) { state.status = 'gameover'; state.winner = 'ai'; }
+  else if (aiTotal === 0) { state.status = 'gameover'; state.winner = 'player'; }
 }
 
 export function getPlayerCardCount(state: GameState): number {
