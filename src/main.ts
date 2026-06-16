@@ -215,10 +215,11 @@ async function doWarStep() {
   playBtn.disabled = true;
 
   if (state.status === 'war-hidden') {
-    // Игрок кладёт закрытую карту (рубашкой)
+    // Игрок кладёт закрытую карту (рубашкой) — первым
     const pBack = createBackEl();
     pBack.classList.add('dealt-player');
     tablePlayer.appendChild(pBack);
+    await sleep(400);
 
     const aBack = createBackEl();
     aBack.classList.add('dealt-ai');
@@ -236,12 +237,13 @@ async function doWarStep() {
   const pBack = createBackEl();
   pBack.classList.add('dealt-player');
   tablePlayer.appendChild(pBack);
+  await sleep(400);
 
   const aBack = createBackEl();
   aBack.classList.add('dealt-ai');
   tableAi.appendChild(aBack);
 
-  await sleep(500);
+  await sleep(300);
 
   const wr: WarStepResult = warStep(state);
   state = wr.state;
@@ -320,14 +322,16 @@ async function animateBattle(result: BattleResult) {
   const playerStakeCount = result.playerPeeked ? result.playerPeeked.length - 1 : 0;
   const aiStakeCount = result.aiPeeked ? result.aiPeeked.length - 1 : 0;
 
-  // Main cards
+  // Main cards — player first, then AI
   const pCard = createCardEl(result.playerCard);
-  const aCard = createCardEl(result.aiCard);
   pCard.classList.add('dealt-player');
-  aCard.classList.add('dealt-ai');
   tablePlayer.appendChild(pCard);
+  await sleep(500);
+
+  const aCard = createCardEl(result.aiCard);
+  aCard.classList.add('dealt-ai');
   tableAi.appendChild(aCard);
-  await sleep(1000);
+  await sleep(800);
 
   if (playerStakeCount > 0 || aiStakeCount > 0) {
     const stakeText = document.createElement('div');
