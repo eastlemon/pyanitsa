@@ -2,7 +2,8 @@ import './style.css';
 import './leaderboard.css';
 import type { GameState, Card, BattleResult, GameMode } from './engine';
 import { newGame, playTurn, peekCard, getPlayerCardCount, getAiCardCount } from './engine';
-import { cardImageURL } from './cards';
+import { cardImageURL, cardBackURL } from './cards';
+import { RANKS, SUITS } from './engine';
 import { loadScores, saveScore } from './leaderboard';
 
 // === DOM ===
@@ -20,12 +21,37 @@ const peekInfo = document.getElementById('peek-info')!;
 const board = document.getElementById('board')!;
 const modeScreen = document.getElementById('mode-screen')!;
 
-// === IMAGE CACHE ===
+// === IMAGE CACHE + PRELOAD ===
 const faceCache = new Map<string, string>();
+const preloaded = new Set<string>();
+
 function getFaceURL(card: Card): string {
   if (!faceCache.has(card.id)) faceCache.set(card.id, cardImageURL(card.rank, card.suit));
   return faceCache.get(card.id)!;
 }
+
+function preloadAllCards(): Promise<void> {
+  const urls = new Set<string>();
+  urls.add(cardBackURL());
+  for (const suit of SUITS) {
+    for (const rank of RANKS) {
+      urls.add(cardImageURL(rank, suit));
+    }
+  }
+  return Promise.all([...urls].map(url => {
+    if (preloaded.has(url)) return Promise.resolve();
+    preloaded.add(url);
+    return new Promise<void>(resolve => {
+      const img = new Image();
+      img.onload = () => resolve();
+      img.onerror = () => resolve();
+      img.src = url;
+    });
+  })).then(() => undefined);
+}
+
+// Предзагрузка сразу при загрузке скрипта
+preloadAllCards();
 
 // === STATE ===
 let state: GameState = newGame();
@@ -52,7 +78,7 @@ function createCardEl(card: Card): HTMLElement {
   el.className = 'card';
   el.dataset.cardId = card.id;
   el.innerHTML = `
-    <div class="card-face" style="background-image:url('${getFaceURL(card)}');background-size:cover;"></div>`;
+    <div class="card-face" style="background-image:url('${getFaceURL(card)}'), url('${cardBackURL()}');background-size:cover;"></div>`;
   return el;
 }
 
