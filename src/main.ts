@@ -164,7 +164,7 @@ peekBtn.addEventListener('click', async () => {
   await sleep(1500);
 
   cardEl.style.transition = 'all 0.3s ease';
-  cardEl.style.transform = 'translate(0, -120px) scale(0.7) rotate(-10deg)';
+  cardEl.style.transform = 'scale(0.5)';
   cardEl.style.opacity = '0';
   await sleep(300);
   tablePlayer.innerHTML = '';
@@ -310,7 +310,7 @@ async function animateBattle(result: BattleResult) {
       thinkText.remove();
 
       aiPeekCard.style.transition = 'all 0.3s ease';
-      aiPeekCard.style.transform = 'translate(0, 120px) scale(0.7) rotate(10deg)';
+      aiPeekCard.style.transform = 'scale(0.5)';
       aiPeekCard.style.opacity = '0';
       await sleep(300);
     }
