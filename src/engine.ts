@@ -1,6 +1,6 @@
 // Пьяница — игровой движок
 // Чистая логика, без UI
-// Две закольцованные колоды, карты добавляются LIFO (unshift)
+// Карты берутся сверху (index 0), выигранные идут вниз колоды (push)
 
 export type Suit = '♠' | '♥' | '♦' | '♣';
 export type Rank = '6' | '7' | '8' | '9' | '10' | 'J' | 'Q' | 'K' | 'A';
@@ -52,12 +52,10 @@ export function compareCards(a: Card, b: Card): number {
 }
 
 // === War ===
-export type WarPhase = 'hidden' | 'face';
-
 export interface WarStepResult {
   state: GameState;
   revealedCards: { player: Card; ai: Card } | null;
-  outcome: 'hidden-placed' | 'face-revealed' | 'war-won' | 'war-continues' | 'gameover';
+  outcome: 'war-won' | 'war-continues' | 'gameover';
   winner: 'player' | 'ai' | null;
 }
 
@@ -72,19 +70,14 @@ export interface BattleResult {
 
 export interface GameState {
   mode: GameMode;
-  /** Колода игрока — top = index 0 */
   playerDeck: Card[];
-  /** Колода бота — top = index 0 */
   aiDeck: Card[];
-  /** Карты на столе (в текущем бою/споре) */
   tablePile: Card[];
-  status: 'idle' | 'peeking' | 'war-hidden' | 'war-face' | 'gameover';
-  warPhase: WarPhase | null;
+  status: 'idle' | 'peeking' | 'war' | 'gameover';
   winner: 'player' | 'ai' | null;
   round: number;
   lastResult: BattleResult | null;
   history: BattleResult[];
-  // Preview mode
   playerPeeked: Card[];
   playerPeekCount: number;
   aiPeeked: Card[];
@@ -101,7 +94,6 @@ export function newGame(mode: GameMode = 'classic'): GameState {
     aiDeck: deck.slice(half),
     tablePile: [],
     status: mode === 'preview' ? 'peeking' : 'idle',
-    warPhase: null,
     winner: null,
     round: 0,
     lastResult: null,
@@ -114,15 +106,13 @@ export function newGame(mode: GameMode = 'classic'): GameState {
   };
 }
 
-/** Взять верхнюю карту (index 0). Колода закольцована — если пусто, это конец. */
 function drawFromTop(deck: Card[]): { card: Card | null; deck: Card[] } {
   if (deck.length === 0) return { card: null, deck };
   return { card: deck[0], deck: deck.slice(1) };
 }
 
-/** Добавить выигранные карты LIFO — наверх (начало массива) */
-function addToTop(deck: Card[], cards: Card[]): Card[] {
-  return [...cards, ...deck];
+function addToBottom(deck: Card[], cards: Card[]): Card[] {
+  return [...deck, ...cards];
 }
 
 // === PREVIEW MODE: peek ===
@@ -149,14 +139,33 @@ export function aiPeekDecision(deck: Card[], maxPeeks: number): { peeked: Card[]
 
   for (let i = 0; i < maxPeeks; i++) {
     if (d.length === 0) break;
-    peeked.push(d[0]);
+    const card = d[0];
+
+    if (peeked.length > 0) {
+      const current = peeked[peeked.length - 1];
+      if (card.power <= current.power) break;
+    }
+
+    peeked.push(card);
     d = d.slice(1);
-    if (peeked[peeked.length - 1].power >= 10 || Math.random() < 0.3) break;
+
+    const last = peeked[peeked.length - 1];
+
+    if (last.power >= 14) break;           // Туз — стоп
+    if (last.power >= 13) break;           // Король — стоп
+    if (last.power >= 12) break;           // Дама — стоп
+    if (last.power >= 10) break;           // 10, J — стоп
+    if (last.power >= 8) {                 // 8-9 — редко ищем лучше
+      if (Math.random() < 0.2) continue;
+      break;
+    }
+    if (Math.random() < 0.4) continue;     // 6-7 — иногда ищем дальше
+    break;
   }
   return { peeked, deck: d };
 }
 
-// === PLAY TURN (initial play, no auto-war) ===
+// === PLAY TURN ===
 export function playTurn(state: GameState): GameState {
   if (state.status === 'gameover') return state;
 
@@ -171,7 +180,6 @@ export function playTurn(state: GameState): GameState {
   let playerCard: Card;
   if (state.mode === 'preview' && playerPeeked.length > 0) {
     playerCard = playerPeeked[playerPeeked.length - 1];
-    // Остальные подсмотренные — ставка (на стол)
     tablePile.push(...playerPeeked.slice(0, -1));
   } else {
     const r = drawFromTop(playerDeck);
@@ -204,13 +212,20 @@ export function playTurn(state: GameState): GameState {
   const result = compareCards(playerCard, aiCard);
 
   if (result === 0) {
-    // === WAR — не решаем автоматически ===
+    // === WAR — спор, карты остаются на столе ===
+    if (playerDeck.length === 0) {
+      aiDeck = addToBottom(aiDeck, tablePile);
+      return { ...state, playerDeck, aiDeck, tablePile: [], status: 'gameover', winner: 'ai', round: state.round + 1 };
+    }
+    if (aiDeck.length === 0) {
+      playerDeck = addToBottom(playerDeck, tablePile);
+      return { ...state, playerDeck, aiDeck, tablePile: [], status: 'gameover', winner: 'player', round: state.round + 1 };
+    }
     return {
       ...state,
       playerDeck, aiDeck,
       tablePile,
-      status: 'war-hidden',
-      warPhase: 'hidden',
+      status: 'war',
       round: state.round + 1,
       playerPeeked: [],
       playerPeekCount: 0,
@@ -224,13 +239,11 @@ export function playTurn(state: GameState): GameState {
     };
   }
 
-  // === Обычный результат ===
   const winner = result > 0 ? 'player' : 'ai';
-  // LIFO: выигранные карты наверх
   if (winner === 'player') {
-    playerDeck = addToTop(playerDeck, tablePile);
+    playerDeck = addToBottom(playerDeck, tablePile);
   } else {
-    aiDeck = addToTop(aiDeck, tablePile);
+    aiDeck = addToBottom(aiDeck, tablePile);
   }
 
   const battleResult: BattleResult = {
@@ -244,7 +257,6 @@ export function playTurn(state: GameState): GameState {
     playerDeck, aiDeck,
     tablePile: [],
     status: state.mode === 'preview' ? 'peeking' : 'idle',
-    warPhase: null,
     round: state.round + 1,
     lastResult: battleResult,
     history: [...state.history, battleResult],
@@ -258,9 +270,9 @@ export function playTurn(state: GameState): GameState {
   return newState;
 }
 
-// === WAR STEP — игрок жмёт кнопку, открываем по одной паре ===
+// === WAR STEP — просто по одной карте каждому, как обычный раунд ===
 export function warStep(state: GameState): WarStepResult {
-  if (state.status !== 'war-hidden' && state.status !== 'war-face') {
+  if (state.status !== 'war') {
     return { state, revealedCards: null, outcome: 'gameover', winner: null };
   }
 
@@ -268,52 +280,39 @@ export function warStep(state: GameState): WarStepResult {
   let aiDeck = [...state.aiDeck];
   let tablePile = [...state.tablePile];
 
-  if (state.status === 'war-hidden') {
-    const pr = drawFromTop(playerDeck);
-    const ar = drawFromTop(aiDeck);
-    if (!pr.card) {
-      aiDeck = addToTop(aiDeck, tablePile);
-      return { state: { ...state, status: 'gameover', winner: 'ai', tablePile: [], aiDeck }, revealedCards: null, outcome: 'gameover', winner: 'ai' };
-    }
-    if (!ar.card) {
-      playerDeck = addToTop(playerDeck, tablePile);
-      return { state: { ...state, status: 'gameover', winner: 'player', tablePile: [], playerDeck }, revealedCards: null, outcome: 'gameover', winner: 'player' };
-    }
-    tablePile.push(pr.card, ar.card);
-    return {
-      state: { ...state, playerDeck, aiDeck, tablePile, status: 'war-face', warPhase: 'face' },
-      revealedCards: null, outcome: 'hidden-placed', winner: null,
-    };
+  // Проверяем, есть ли карты
+  if (playerDeck.length === 0) {
+    aiDeck = addToBottom(aiDeck, tablePile);
+    return { state: { ...state, status: 'gameover', winner: 'ai', tablePile: [], aiDeck, playerDeck }, revealedCards: null, outcome: 'gameover', winner: 'ai' };
+  }
+  if (aiDeck.length === 0) {
+    playerDeck = addToBottom(playerDeck, tablePile);
+    return { state: { ...state, status: 'gameover', winner: 'player', tablePile: [], playerDeck, aiDeck }, revealedCards: null, outcome: 'gameover', winner: 'player' };
   }
 
-  // war-face: open comparison cards
+  // Берём по одной карте
   const pr = drawFromTop(playerDeck);
   const ar = drawFromTop(aiDeck);
-  if (!pr.card) {
-    aiDeck = addToTop(aiDeck, tablePile);
-    return { state: { ...state, status: 'gameover', winner: 'ai', tablePile: [], aiDeck }, revealedCards: null, outcome: 'gameover', winner: 'ai' };
-  }
-  if (!ar.card) {
-    playerDeck = addToTop(playerDeck, tablePile);
-    return { state: { ...state, status: 'gameover', winner: 'player', tablePile: [], playerDeck }, revealedCards: null, outcome: 'gameover', winner: 'player' };
-  }
+  tablePile.push(pr.card!, ar.card!);
+  const revealed = { player: pr.card!, ai: ar.card! };
+  playerDeck = pr.deck;
+  aiDeck = ar.deck;
 
-  tablePile.push(pr.card, ar.card);
-  const revealed = { player: pr.card, ai: ar.card };
+  const result = compareCards(pr.card!, ar.card!);
 
-  const result = compareCards(pr.card, ar.card);
   if (result === 0) {
+    // Опять спор — карты копятся дальше
     return {
-      state: { ...state, playerDeck, aiDeck, tablePile, status: 'war-hidden', warPhase: 'hidden' },
+      state: { ...state, playerDeck, aiDeck, tablePile, status: 'war' },
       revealedCards: revealed, outcome: 'war-continues', winner: null,
     };
   }
 
   const winner = result > 0 ? 'player' : 'ai';
   if (winner === 'player') {
-    playerDeck = addToTop(playerDeck, tablePile);
+    playerDeck = addToBottom(playerDeck, tablePile);
   } else {
-    aiDeck = addToTop(aiDeck, tablePile);
+    aiDeck = addToBottom(aiDeck, tablePile);
   }
 
   const newState: GameState = {
@@ -321,7 +320,6 @@ export function warStep(state: GameState): WarStepResult {
     playerDeck, aiDeck,
     tablePile: [],
     status: state.mode === 'preview' ? 'peeking' : 'idle',
-    warPhase: null,
   };
 
   checkGameOver(newState);
